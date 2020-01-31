@@ -4,9 +4,9 @@ import QtQuick.Layouts 1.2
  
 ApplicationWindow {
     visible: true
-    width: 640
-    height: 240
-    title: qsTr("PyQt5 love QML")
+    width: 1000
+    height: 750
+    title: qsTr("NeuroDetector")
     color: "whitesmoke"
  
     GridLayout {
