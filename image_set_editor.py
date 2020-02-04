@@ -69,17 +69,18 @@ class ImageSetWindow(QMainWindow):
         leftLayout.addWidget(labelPathListWidget)
         self.pathListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.pathListWidget.customContextMenuRequested.connect(self.show_context_menu)
+        self.pathListWidget.itemSelectionChanged.connect(self.path_list_widget_item_selected)
 
-        actionPathAddFile = self.menuPathListWidget.addAction('Add new file/files...')
+        actionPathAddFile = self.menuPathListWidget.addAction('Добавить файл/файлы...')
         actionPathAddFile.setShortcut("insert")
         actionPathAddFile.triggered.connect(self.action_path_add_file_click)
 
         actionPathAddFolder = self.menuPathListWidget.addAction('Add new folder...')
-        actionPathAddFolder.setShortcut("shift + insert")
+        actionPathAddFolder.setShortcut("shift+insert")
         actionPathAddFolder.triggered.connect(self.action_path_add_folder_click)
 
         actionPathAddMask = self.menuPathListWidget.addAction('Add new mask...')
-        actionPathAddMask.setShortcut("ctrl + insert")
+        actionPathAddMask.setShortcut("ctrl+insert")
         actionPathAddMask.triggered.connect(self.action_path_add_mask_click)
 
         self.menuPathListWidget.addSeparator()
@@ -90,13 +91,13 @@ class ImageSetWindow(QMainWindow):
         leftLayout.addWidget(self.pathListWidget)
         # for i in range(10):
         #     self.pathListWidget.addItem('Set #{}'.format(i))
-        self.pathListWidget.addItem('/home/krasnov/IRZProjects/NeuroWeb/Object-Detection-Quidditch-master/images')
+        # self.pathListWidget.addItem('/home/krasnov/IRZProjects/NeuroWeb/Object-Detection-Quidditch-master/images')
 
         labelImagesListWidget = QLabel("Файлы")
         leftLayout.addWidget(labelImagesListWidget)
         leftLayout.addWidget(self.imagesListWidget)
-        for i in range(10):
-            self.imagesListWidget.addItem('File #{}'.format(i))
+        # for i in range(10):
+        #     self.imagesListWidget.addItem('File #{}'.format(i))
 
         labelObjectListWidget = QLabel("Объекты")
         leftLayout.addWidget(labelObjectListWidget)
@@ -118,17 +119,17 @@ class ImageSetWindow(QMainWindow):
 
     def action_path_add_file_click(self):
         openDialog = QFileDialog()
-        file = openDialog.getOpenFileName(self
-                                          , "Выберите файлы изображения"
-                                          , "/"
-                                          , "All files (*.*);;JPEG (*.jpg, *.jpeg)"
-                                          , "JPEG (*.jpg, *.jpeg)")
-        if file[0]:
-            self.pathListWidget.addItem(file[0])
+        files = openDialog.getOpenFileNames(self
+                                            , "Выберите файлы изображения"
+                                            , ""
+                                            , "JPEG (*.jpg);;All files (*)")
+        for file in files[0]:
+            if file:
+                self.pathListWidget.addItem(file)
 
     def action_path_add_folder_click(self):
         openDialog = QFileDialog()
-        directory = openDialog.getExistingDirectory(self, "Выберите папку с файлами", "/")
+        directory = openDialog.getExistingDirectory(self, "Выберите папку с файлами", "")
         if directory and os.path.isdir(directory):
             if not glob.glob(os.path.join(directory, "*.jpg")) \
                and not glob.glob(os.path.join(directory, "**", "*.jpg"), recursive=True):
@@ -146,7 +147,7 @@ class ImageSetWindow(QMainWindow):
 
     def action_path_add_mask_click(self):
         openDialog = QFileDialog()
-        directory = openDialog.getExistingDirectory(self, "Выберите папку с файлами", "/")
+        directory = openDialog.getExistingDirectory(self, "Выберите папку с файлами", "")
 
         if directory and os.path.isdir(directory):
             mBox = QMessageBox()
@@ -169,16 +170,28 @@ class ImageSetWindow(QMainWindow):
                                                , QLineEdit.Normal
                                                , mask)
 
-                if ok and not glob.glob(mask, recursive=True):
-                    dlgResult = mBox.question(self
-                                              , "Диалог подтверждения"
-                                              , "По указанной маске не обнаружено файлов изображений. "
-                                              + "Все равно добавить маску?"
-                                              , QMessageBox.Yes | QMessageBox.No
-                                              , QMessageBox.No)
-                    if dlgResult == QMessageBox.No:
-                        continue
+                if ok:
+                    if not glob.glob(mask, recursive=True):
+                        dlgResult = mBox.question(self
+                                                  , "Диалог подтверждения"
+                                                  , "По указанной маске не обнаружено файлов изображений. "
+                                                  + "Все равно добавить маску?"
+                                                  , QMessageBox.Yes | QMessageBox.No
+                                                  , QMessageBox.No)
+                        if dlgResult == QMessageBox.No:
+                            continue
                     self.pathListWidget.addItem(mask)
                     break
                 else:
                     break
+
+    def path_list_widget_item_selected(self):
+        self.imagesListWidget.clear()
+        if self.pathListWidget.currentItem():
+            path = self.pathListWidget.currentItem().text()
+            if os.path.split(path)[1] and not str.endswith(os.path.split(path)[1], ".jpg"):
+                path = os.path.join(path, "*.jpg")
+            files = glob.glob(path)
+            files.sort()
+            for file in files:
+                self.imagesListWidget.addItem(file)
