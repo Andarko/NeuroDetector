@@ -18,6 +18,8 @@ import sys
 from dataclasses import dataclass, field
 import os.path
 
+from image_set_editor import ImageSetWindow
+
 
 # Размеры изображения для аннотаций
 @dataclass
@@ -88,6 +90,7 @@ class RecognizingNN:
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.imgSetEditForm = ImageSetWindow()
         self.init_ui()
 
     def init_ui(self):
@@ -104,7 +107,7 @@ class MainWindow(QMainWindow):
         fileMenuAOpen = QAction("&Открыть...", self)
         fileMenuAOpen.setShortcut("Ctrl+O")
         fileMenuAOpen.setStatusTip("Открыть существующую нейросеть")
-        # fileMenuAOpen.triggered.connect(self.openFile)
+        fileMenuAOpen.triggered.connect(self.open_file)
         fileMenu.addAction(fileMenuAOpen)
         fileMenu.addSeparator()
         fileMenuASave = fileMenu.addAction("&Сохранить")
@@ -127,15 +130,14 @@ class MainWindow(QMainWindow):
         imgSetMenu = menuBar.addMenu("Набор &картинок")
         imgSetMenuAEdit = imgSetMenu.addAction("Смотреть/&Редактировать...")
         imgSetMenuAEdit.setStatusTip("Просмотр и редактирование наборов картинок")
-        imgSetMenuAEdit.triggered.connect(self.imgSetEditFormOpen)
+        imgSetMenuAEdit.triggered.connect(self.img_set_edit_form_open)
         imgSetMenuAOpen = imgSetMenu.addAction("&Выбрать набор...")
         imgSetMenuAOpen.setStatusTip("Выбрать набор картинок для обучения")
         # imgSetMenuAOpen.triggered.connect(self.imgSetOpen)
         menuBar.addMenu(imgSetMenu)
 
-        self.setWindowTitle('NeuroDetector')
+        self.setWindowTitle('NeuroDetector v0.0.0')
         # Центральные элементы, включая изображение
-        mainLayout = QHBoxLayout(self)
         mainWidget = QWidget(self)
         centralLayout = QVBoxLayout()
         mainWidget.setLayout(centralLayout)
@@ -146,108 +148,21 @@ class MainWindow(QMainWindow):
         self.resize(1280, 720)
         self.move(300, 300)
         self.setMinimumSize(800, 600)
-        neuroNetwork = RecognizingNN()
-        neuroNetwork.imageSet.imgPaths.append("/etc/")
+        # neuroNetwork = RecognizingNN()
+        # neuroNetwork.imageSet.imgPaths.append("/etc/")
         self.show()
-        self.imgSetEditForm = ImageSetWindow()
 
-    def imgSetEditFormOpen(self):
+    def img_set_edit_form_open(self):
         self.imgSetEditForm.show()
 
+    def open_file(self):
+        file_filter = "Microscope scans (*.misc)"
+        openDialog = QFileDialog()
+        a = openDialog.getOpenFileName(self, "Выберите файл изображения", "/"
+                                       , "All files (*.*);;Microscope scans (*.misc)", file_filter)
+        for b in a:
+            print(b)
 
-# Окно для работы с наборами изображений
-class ImageSetWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.init_ui()
-
-    def init_ui(self):
-        # Основное меню
-        menuBar = self.menuBar()
-        # Меню "Файл"
-        fileMenu = menuBar.addMenu("&Файл")
-        fileMenuANew = QAction("&Новый", self)
-        fileMenuANew.setShortcut("Ctrl+N")
-        fileMenuANew.setStatusTip("Новый набор картинок")
-
-        fileMenu.addAction(fileMenuANew)
-        fileMenu.addSeparator()
-        fileMenuAOpen = QAction("&Открыть...", self)
-        fileMenuAOpen.setShortcut("Ctrl+O")
-        fileMenuAOpen.setStatusTip("Открыть существующий набор картинок")
-        # fileMenuAOpen.triggered.connect(self.openFile)
-        fileMenu.addAction(fileMenuAOpen)
-        fileMenu.addSeparator()
-        fileMenuASave = fileMenu.addAction("&Сохранить")
-        fileMenuASave.setShortcut("Ctrl+S")
-        fileMenuASave.setStatusTip("Сохранить изменения")
-        # fileMenuASave.triggered.connect(self.saveFile)
-        fileMenuASaveAss = fileMenu.addAction("Сохранить как...")
-        fileMenuASaveAss.setShortcut("Ctrl+Shift+S")
-        fileMenuASaveAss.setStatusTip("Сохранить текущий набор картинок в другом файле...")
-        # fileMenuASaveAss.triggered.connect(self.saveFileAss)
-        fileMenuASaveAss = fileMenu.addAction("Сохранить копию...")
-        fileMenuASaveAss.setStatusTip("Сохранить текущий набор в отдельный файл...")
-        # fileMenuASaveAss.triggered.connect(self.saveFileAss)
-        fileMenu.addSeparator()
-        fileMenuAExit = QAction("&Выйти", self)
-        fileMenuAExit.setShortcut("Ctrl+Q")
-        fileMenuAExit.setStatusTip("Закрыть приложение")
-        fileMenuAExit.triggered.connect(self.close)
-        fileMenu.addAction(fileMenuAExit)
-        menuBar.addMenu(fileMenu)
-
-        self.setWindowTitle('Редактор наборов изображений')
-        # Центральные элементы, включая изображение
-        mainWidget = QWidget(self)
-        centralLayout = QHBoxLayout()
-        mainWidget.setLayout(centralLayout)
-        self.setCentralWidget(mainWidget)
-
-        leftLayout = QVBoxLayout()
-        centralLayout.addLayout(leftLayout)
-
-        labelPathesListWidget = QLabel("Пути с файлами")
-        leftLayout.addWidget(labelPathesListWidget)
-        self.pathesListWidget = QListWidget()
-        self.pathesListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.pathesListWidget.customContextMenuRequested.connect(self.show_context_menu)
-
-        self.menu = QMenu(self)
-        action = self.menu.addAction('Say: "Hello!"')
-        action.triggered.connect(lambda: QMessageBox.information(self, 'Info', 'Hello!'))
-
-        leftLayout.addWidget(self.pathesListWidget)
-        for i in range(10):
-            self.pathesListWidget.addItem('Set #{}'.format(i))
-
-        labelImagesListWidget = QLabel("Файлы")
-        leftLayout.addWidget(labelImagesListWidget)
-        self.imagesListWidget = QListWidget()
-        leftLayout.addWidget(self.imagesListWidget)
-        for i in range(10):
-            self.imagesListWidget.addItem('File #{}'.format(i))
-
-        labelObjectsListWidget = QLabel("Объекты")
-        leftLayout.addWidget(labelObjectsListWidget)
-        self.objectsListWidget = QListWidget()
-        leftLayout.addWidget(self.objectsListWidget)
-        self.objectsListWidget.addItem('Автомобиль')
-        self.objectsListWidget.addItem('Человек')
-        self.objectsListWidget.addItem('Птица')
-
-
-        self.imLabel = QLabel()
-        self.imLabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.imLabel.setStyleSheet("border: 1px solid red")
-        centralLayout.addWidget(self.imLabel)
-
-        self.resize(800, 600)
-        self.move(300, 300)
-        self.setMinimumSize(800, 600)
-
-    def show_context_menu(self, point):
-        self.menu.exec(self.mapToGlobal(point))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
