@@ -156,10 +156,13 @@ class MainWindow(QMainWindow):
         self.imgSetEditForm.show()
 
     def open_file(self):
-        file_filter = "Microscope scans (*.misc)"
         openDialog = QFileDialog()
-        a = openDialog.getOpenFileName(self, "Выберите файл изображения", "/"
-                                       , "All files (*.*);;Microscope scans (*.misc)", file_filter)
+        a = openDialog.getOpenFileName(self,
+                                       "Выберите файл изображения",
+                                       "",
+                                       "All files (*.*);;Microscope scans (*.misc)",
+                                       "Microscope scans (*.misc)",
+                                       options=openDialog.options() | QFileDialog.DontUseNativeDialog)
         for b in a:
             print(b)
 
