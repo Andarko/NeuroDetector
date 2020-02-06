@@ -1,12 +1,15 @@
 import xml.etree.ElementTree as xmlET
-from dataclasses import dataclass
 
+from PyQt5.QtGui import QImage
+import PyQt5.QtGui as QtGui
 from lxml import etree
 from PyQt5.QtWidgets import QMainWindow, QLabel, QListWidget, QMenu, QAction, QWidget, QHBoxLayout, QVBoxLayout, \
     QSizePolicy, QFileDialog, QInputDialog, QMessageBox, QLineEdit
 from PyQt5.QtCore import Qt
 import os
 import glob
+import numpy as np
+import cv2
 
 
 # Окно для работы с наборами изображений
@@ -124,6 +127,7 @@ class ImageSetWindow(QMainWindow):
         # labelImagesListWidget = QLabel("Файлы")
         self.labelImagesListWidget.setText("0 файлов")
         leftLayout.addWidget(self.labelImagesListWidget)
+        self.imagesListWidget.itemSelectionChanged.connect(self.image_list_widget_item_selected)
         leftLayout.addWidget(self.imagesListWidget)
         # for i in range(10):
         #     self.imagesListWidget.addItem('File #{}'.format(i))
@@ -131,9 +135,9 @@ class ImageSetWindow(QMainWindow):
         labelObjectListWidget = QLabel("Объекты")
         leftLayout.addWidget(labelObjectListWidget)
         leftLayout.addWidget(self.objectListWidget)
-        self.objectListWidget.addItem('Автомобиль')
-        self.objectListWidget.addItem('Человек')
-        self.objectListWidget.addItem('Птица')
+        self.objectListWidget.addItem("Автомобиль")
+        self.objectListWidget.addItem("Человек")
+        self.objectListWidget.addItem("Птица")
 
         self.imLabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.imLabel.setStyleSheet("border: 1px solid red")
@@ -372,6 +376,17 @@ class ImageSetWindow(QMainWindow):
         endWord = get_end_of_word(self.imagesListWidget.count(), ("", "а", "ов"))
         self.labelImagesListWidget.setText(f"{self.imagesListWidget.count()} файл{endWord}")
 
+    def image_list_widget_item_selected(self):
+        if self.imagesListWidget.currentItem():
+            mainImg = cv2.imread(self.imagesListWidget.currentItem().text(), cv2.IMREAD_COLOR)[:, :, ::-1]
+            resizeKoef = min(self.imLabel.width() / mainImg.shape[1], self.imLabel.height() / mainImg.shape[0])
+            resizedImage = cv2.resize(mainImg.copy(),
+                                      (int(resizeKoef * mainImg.shape[1]), int(resizeKoef * mainImg.shape[0])),
+                                      interpolation=cv2.INTER_AREA)
+            qImg = numpy_to_image(resizedImage)
+            pixmap = QtGui.QPixmap.fromImage(qImg)
+            self.imLabel.setPixmap(pixmap)
+
 
 def get_end_of_word(count, ends):
     mod = count % 100
@@ -385,3 +400,24 @@ def get_end_of_word(count, ends):
             return ends[1]
         else:
             return ends[2]
+
+
+def numpy_to_image(image):
+    if image.dtype == np.uint8:
+        if len(image.shape) == 2:
+            channels = 1
+            height, width = image.shape
+            bytesPerLine = channels * width
+            qImg = QImage(image.data, width, height, bytesPerLine, QImage.Format_Indexed8)
+            qImg.setColorTable([QtGui.qRgb(i, i, i) for i in range(256)])
+            return qImg
+        elif len(image.shape) == 3:
+            if image.shape[2] == 3:
+                height, width, channels = image.shape
+                bytesPerLine = channels * width
+                return QImage(image.data, width, height, bytesPerLine, QImage.Format_RGB888)
+            elif image.shape[2] == 4:
+                height, width, channels = image.shape
+                bytesPerLine = channels * width
+                fmt = QImage.Format_ARGB32
+                return QImage(image.data, width, height, bytesPerLine, QImage.Format_ARGB32)
