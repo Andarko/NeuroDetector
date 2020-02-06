@@ -1,4 +1,6 @@
 import xml.etree.ElementTree as xmlET
+from dataclasses import dataclass
+
 from lxml import etree
 from PyQt5.QtWidgets import QMainWindow, QLabel, QListWidget, QMenu, QAction, QWidget, QHBoxLayout, QVBoxLayout, \
     QSizePolicy, QFileDialog, QInputDialog, QMessageBox, QLineEdit
@@ -12,22 +14,25 @@ class ImageSetWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.imLabel = QLabel()
-        self.objectListWidget = QListWidget()
-        self.menuPathListWidget = QMenu(self)
+        # Список источников
+        self.pathListWidget = QListWidget()
+        self.menuPathListWidget = QMenu()
+        self.actionPathSubFolder = QAction()
+        self.actionPathEdit = QAction()
+        self.actionPathRemove = QAction()
+        # Список картинок
         self.labelImagesListWidget = QLabel()
         self.imagesListWidget = QListWidget()
-        self.menuPathListWidget = QMenu(self)
-        self.pathListWidget = QListWidget()
-        self.actionPathSubFolder = QAction()
-        self.init_ui()
-
+        # Список объектов
+        self.objectListWidget = QListWidget()
         # Путь к текущему открытому файлу
         self.fileName = ""
+        self.init_ui()
 
     def init_ui(self):
-        # Основное меню
+        """Основное меню"""
         menuBar = self.menuBar()
-        # Меню "Файл"
+        """Меню Файл"""
         fileMenu = menuBar.addMenu("&Файл")
         fileMenuANew = QAction("&Новый", self)
         fileMenuANew.setShortcut("Ctrl+N")
@@ -65,7 +70,8 @@ class ImageSetWindow(QMainWindow):
         menuBar.addMenu(fileMenu)
 
         self.setWindowTitle('Редактор наборов изображений')
-        # Центральные элементы, включая изображение
+
+        """Центральные элементы, включая изображение"""
         mainWidget = QWidget(self)
         centralLayout = QHBoxLayout()
         mainWidget.setLayout(centralLayout)
@@ -77,9 +83,10 @@ class ImageSetWindow(QMainWindow):
         labelPathListWidget = QLabel("Источники")
         leftLayout.addWidget(labelPathListWidget)
         self.pathListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.pathListWidget.customContextMenuRequested.connect(self.show_context_menu)
+        self.pathListWidget.customContextMenuRequested.connect(self.show_context_menu_path)
         self.pathListWidget.itemSelectionChanged.connect(self.path_list_widget_item_selected)
 
+        """Контекстное меню"""
         actionPathAddFile = self.menuPathListWidget.addAction('Добавить файл/файлы...')
         actionPathAddFile.setShortcut("insert")
         actionPathAddFile.triggered.connect(self.action_path_add_file_click)
@@ -93,18 +100,21 @@ class ImageSetWindow(QMainWindow):
         actionPathAddMask.triggered.connect(self.action_path_add_mask_click)
 
         self.menuPathListWidget.addSeparator()
-        actionPathEdit = self.menuPathListWidget.addAction('Изменить...')
-        actionPathEdit.triggered.connect(self.action_path_edit_click)
+        self.actionPathEdit.setText("Изменить...")
+        self.menuPathListWidget.addAction(self.actionPathEdit)
+        self.actionPathEdit.triggered.connect(self.action_path_edit_click)
 
         self.actionPathSubFolder.setText("Включать подпапки")
         self.actionPathSubFolder.setCheckable(True)
         self.actionPathSubFolder.setChecked(False)
         self.menuPathListWidget.addAction(self.actionPathSubFolder)
+        self.actionPathSubFolder.triggered.connect(self.action_path_sub_folder_click)
 
         self.menuPathListWidget.addSeparator()
-        actionPathRemove = self.menuPathListWidget.addAction('Remove')
-        actionPathRemove.setShortcut("delete")
-        actionPathRemove.triggered.connect(lambda: self.pathListWidget.takeItem(self.pathListWidget.currentRow()))
+        self.actionPathRemove.setText("Удалить")
+        self.actionPathRemove.setShortcut("delete")
+        self.menuPathListWidget.addAction(self.actionPathRemove)
+        self.actionPathRemove.triggered.connect(lambda: self.pathListWidget.takeItem(self.pathListWidget.currentRow()))
 
         leftLayout.addWidget(self.pathListWidget)
         # for i in range(10):
@@ -210,30 +220,57 @@ class ImageSetWindow(QMainWindow):
         self.fileName = currentFileName
         return
 
-    def show_context_menu(self, point):
+    # Отображение
+    def show_context_menu_path(self, point):
+        if self.pathListWidget.currentItem():
+            self.actionPathEdit.setEnabled(True)
+            self.actionPathRemove.setEnabled(True)
+            path = self.pathListWidget.currentItem().text()
+            withSubFolders = False
+            if str.endswith(path, "**"):
+                path = path[0:-2]
+                withSubFolders = True
+
+            if os.path.exists(path) and os.path.isdir(path):
+                self.actionPathSubFolder.setEnabled(True)
+                self.actionPathSubFolder.setChecked(withSubFolders)
+            else:
+                self.actionPathSubFolder.setEnabled(False)
+                self.actionPathSubFolder.setChecked(False)
+        else:
+            self.actionPathSubFolder.setEnabled(False)
+            self.actionPathSubFolder.setChecked(False)
+            self.actionPathEdit.setEnabled(False)
+            self.actionPathRemove.setEnabled(False)
         self.menuPathListWidget.exec(self.mapToGlobal(point))
 
-    def action_path_add_file_click(self):
+    def get_files_images(self, init_dir="", multi_select=True):
         openDialog = QFileDialog()
-        files = openDialog.getOpenFileNames(self,
-                                            "Выберите файлы изображения",
-                                            "",
-                                            "JPEG (*.jpg);;All files (*)",
-                                            "JPEG (*.jpg)",
-                                            options=openDialog.options() | QFileDialog.DontUseNativeDialog)
-        for file in files[0]:
+        getFile = openDialog.getOpenFileNames
+        if not multi_select:
+            getFile = openDialog.getOpenFileName
+        files = getFile(self,
+                        "Выберите файлы изображения",
+                        init_dir,
+                        "JPEG (*.jpg);;All files (*)",
+                        "JPEG (*.jpg)",
+                        options=openDialog.options() | QFileDialog.DontUseNativeDialog)
+        return files[0]
+
+    def action_path_add_file_click(self):
+        for file in self.get_files_images("", True):
             if file:
                 self.pathListWidget.addItem(file)
 
-    def action_path_add_folder_click(self):
+    def get_folder_images(self, init_dir=""):
         openDialog = QFileDialog()
         directory = openDialog.getExistingDirectory(self,
                                                     "Выберите папку с файлами",
-                                                    "",
-                                                    options=openDialog.options() | QFileDialog.DontUseNativeDialog),
+                                                    init_dir,
+                                                    options=openDialog.options() | QFileDialog.DontUseNativeDialog)
         if directory and os.path.isdir(directory):
             if not glob.glob(os.path.join(directory, "*.jpg")) \
-               and not glob.glob(os.path.join(directory, "**", "*.jpg"), recursive=True):
+                    and not glob.glob(os.path.join(directory, "**", "*.jpg"), recursive=True):
                 mBox = QMessageBox()
                 dlgResult = mBox.question(self,
                                           "Диалог подтверждения",
@@ -241,67 +278,110 @@ class ImageSetWindow(QMainWindow):
                                           QMessageBox.Yes | QMessageBox.No,
                                           QMessageBox.No)
                 if dlgResult == QMessageBox.No:
-                    return
+                    return ""
+        return directory
+
+    def action_path_add_folder_click(self):
+        directory = self.get_folder_images()
+        if directory:
             self.pathListWidget.addItem(directory)
-            # for file in glob.glob(os.path.join(directory, "**", "*.jpg"), recursive=True):
-            #     self.pathListWidget.addItem(file)
+
+    def get_mask_images(self, init_path):
+        inputDialog = QInputDialog()
+        if not str.endswith(init_path, "*.jpg"):
+            init_path = os.path.join(init_path, "*.jpg")
+
+        while True:
+            mask, ok = inputDialog.getText(self,
+                                           'Введите маску для файлов директории',
+                                           'Enter your name:',
+                                           QLineEdit.Normal,
+                                           init_path)
+
+            if ok:
+                if not glob.glob(mask, recursive=True):
+                    dlgText = "По указанной маске не обнаружено файлов изображений. Все равно добавить маску?"
+                    mBox = QMessageBox()
+                    dlgResult = mBox.question(self,
+                                              "Диалог подтверждения",
+                                              dlgText,
+                                              QMessageBox.Yes | QMessageBox.No,
+                                              QMessageBox.No)
+                    if dlgResult == QMessageBox.No:
+                        continue
+                return mask
+            else:
+                return ""
 
     def action_path_add_mask_click(self):
-        openDialog = QFileDialog()
-        directory = openDialog.getExistingDirectory(self,
-                                                    "Выберите папку с файлами",
-                                                    "",
-                                                    options=openDialog.options() | QFileDialog.DontUseNativeDialog)
-
-        if directory and os.path.isdir(directory):
-            mBox = QMessageBox()
-            if not glob.glob(os.path.join(directory, "*.jpg")) \
-                    and not glob.glob(os.path.join(directory, "**", "*.jpg"), recursive=True):
-                dlgResult = mBox.question(self,
-                                          "Диалог подтверждения",
-                                          "В указанной папке не обнаружено файлов изображений. Все равно добавить ее?",
-                                          QMessageBox.Yes | QMessageBox.No,
-                                          QMessageBox.No)
-                if dlgResult == QMessageBox.No:
-                    return
-            inputDialog = QInputDialog()
-            mask = os.path.join(directory, "*.jpg")
-
-            while True:
-                mask, ok = inputDialog.getText(self,
-                                               'Введите маску для файлов директории',
-                                               'Enter your name:',
-                                               QLineEdit.Normal,
-                                               mask)
-
-                if ok:
-                    if not glob.glob(mask, recursive=True):
-                        dlgText = "По указанной маске не обнаружено файлов изображений. Все равно добавить маску?"
-                        dlgResult = mBox.question(self,
-                                                  "Диалог подтверждения",
-                                                  dlgText,
-                                                  QMessageBox.Yes | QMessageBox.No,
-                                                  QMessageBox.No)
-                        if dlgResult == QMessageBox.No:
-                            continue
-                    self.pathListWidget.addItem(mask)
-                    break
-                else:
-                    break
+        directory = self.get_folder_images()
+        if directory:
+            mask = self.get_mask_images(directory)
+            if mask:
+                self.pathListWidget.addItem(mask)
 
     def action_path_edit_click(self):
-        return
+        if self.pathListWidget.currentItem():
+            path = self.pathListWidget.currentItem().text()
+            withSubFolders = False
+            if str.endswith(path, "**"):
+                path = path[0:-2]
+                withSubFolders = True
+            newStr = ""
+            if os.path.exists(path):
+                # Папка
+                if os.path.isdir(path):
+                    newStr = self.get_folder_images(path)
+                    if withSubFolders:
+                        newStr += "**"
+                # Файл
+                else:
+                    newStr = self.get_files_images(path, False)
+            # Маска
+            else:
+                newStr = self.get_mask_images(path)
+            if newStr:
+                self.pathListWidget.currentItem().setText(newStr)
+                self.path_list_widget_item_selected()
+
+    def action_path_sub_folder_click(self):
+        if self.pathListWidget.currentItem():
+            if self.actionPathSubFolder.isChecked():
+                if not str.endswith(self.pathListWidget.currentItem().text(), "**"):
+                    self.pathListWidget.currentItem().setText(self.pathListWidget.currentItem().text() + "**")
+            elif str.endswith(self.pathListWidget.currentItem().text(), "**"):
+                self.pathListWidget.currentItem().setText(self.pathListWidget.currentItem().text()[0:-2])
+            self.path_list_widget_item_selected()
 
     def path_list_widget_item_selected(self):
         self.imagesListWidget.clear()
         if self.pathListWidget.currentItem():
             path = self.pathListWidget.currentItem().text()
+            withSubFolders = False
+            if str.endswith(path, "**"):
+                path = path[0:-2]
+                withSubFolders = True
             if os.path.split(path)[1] and not str.endswith(os.path.split(path)[1], ".jpg"):
                 path = os.path.join(path, "*.jpg")
             files = glob.glob(path, recursive=True)
+            if withSubFolders:
+                files += glob.glob(os.path.join(os.path.split(path)[0], "**", "*.jpg"), recursive=True)
             files.sort()
-            # self.labelImagesListWidget.setText(f"{len(files)} файлов")
             for file in files:
                 self.imagesListWidget.addItem(file)
+        endWord = get_end_of_word(self.imagesListWidget.count(), ("", "а", "ов"))
+        self.labelImagesListWidget.setText(f"{self.imagesListWidget.count()} файл{endWord}")
 
-        self.labelImagesListWidget.setText(f"{self.imagesListWidget.count()} файлов")
+
+def get_end_of_word(count, ends):
+    mod = count % 100
+    if 5 <= mod <= 20:
+        return ends[2]
+    else:
+        mod = (count - 1) % 10
+        if mod == 0:
+            return ends[0]
+        elif mod < 4:
+            return ends[1]
+        else:
+            return ends[2]
