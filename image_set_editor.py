@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as xmlET
 
+from typing import List
 from PyQt5.QtGui import QImage
 import PyQt5.QtGui as QtGui
 from lxml import etree
@@ -10,6 +11,57 @@ import os
 import glob
 import numpy as np
 import cv2
+
+from dataclasses import dataclass, field
+
+
+# Размеры изображения для аннотаций
+@dataclass
+class SizeImage:
+    width: int = 0
+    height: int = 0
+    depth: int = 3
+
+
+@dataclass
+class BoundBox:
+    xmin: int = 0
+    ymin: int = 0
+    xmax: int = 0
+    ymax: int = 0
+
+
+# Объект на изображении
+@dataclass
+class ObjectInImage:
+    name: str = ""
+    pose: str = "Unspecified"
+    truncated: int = 0
+    difficult: int = 0
+    bndbox: BoundBox = BoundBox()
+
+
+# Класс "Картинка с аннотацией"
+@dataclass
+class SingleImage:
+    path: str
+    filename: str = ""
+    folder: str = ""
+    size: SizeImage = SizeImage()
+    objectsFromImage: List[ObjectInImage] = field(default_factory=list, repr=False)
+    segmented: int = 0
+
+    def __post_init__(self):
+        if self.path:
+            os.path.splitext(self.path)
+
+
+# Класс "Набор картинок"
+@dataclass
+class ImageSet:
+    # Путь к файлу с описанием набора картинок
+    filePath: str = ""
+    imgPaths: List[SingleImage] = field(default_factory=dict, repr=False)
 
 
 # Окно для работы с наборами изображений
@@ -30,6 +82,7 @@ class ImageSetWindow(QMainWindow):
         self.objectListWidget = QListWidget()
         # Путь к текущему открытому файлу
         self.fileName = ""
+        self.imageSet = ImageSet()
         self.init_ui()
 
     def init_ui(self):
@@ -40,6 +93,7 @@ class ImageSetWindow(QMainWindow):
         fileMenuANew = QAction("&Новый", self)
         fileMenuANew.setShortcut("Ctrl+N")
         fileMenuANew.setStatusTip("Новый набор картинок")
+        fileMenuANew.triggered.connect(self.new_file)
 
         fileMenu.addAction(fileMenuANew)
         fileMenu.addSeparator()
@@ -147,6 +201,9 @@ class ImageSetWindow(QMainWindow):
         self.move(300, 300)
         self.setMinimumSize(800, 600)
 
+    def new_file(self):
+        self.imageSet = ImageSet()
+
     def open_file(self):
         fileDialog = QFileDialog()
         file = QFileDialog.getOpenFileName(fileDialog,
@@ -159,14 +216,45 @@ class ImageSetWindow(QMainWindow):
             return
 
         # Загружаем данные тз нашего файла в xml формате
-        with open(file[0]) as fobj:
-            xml = fobj.read()
+        with open(file[0]) as fileObj:
+            xml = fileObj.read()
         root = etree.fromstring(xml)
         self.pathListWidget.clear()
-        for pathsElement in root.getchildren():
-            if pathsElement.tag == "Paths":
-                for pathElement in pathsElement.getchildren():
-                    self.pathListWidget.addItem(pathElement.text)
+        self.imageSet = ImageSet(filePath=file[0])
+        for elementsXML in root.getchildren():
+            if elementsXML.tag == "Paths":
+                for element in elementsXML.getchildren():
+                    self.pathListWidget.addItem(element.text)
+            elif elementsXML.tag == "Annotations":
+                for element in elementsXML.getchildren():
+                    imagePath = element.attrib["path"]
+                    self.imageSet.imgPaths[imagePath] = SingleImage(imagePath)
+                    for imgObject in element.getchildren():
+                        newObject = ObjectInImage()
+                        for param in imgObject.getchildren():
+                            if param.tag == "Name":
+                                newObject.name = param.text
+                            elif param.tag == "Pose":
+                                newObject.pose = param.text
+                            elif param.tag == "Truncated":
+                                newObject.truncated = param.text
+                            elif param.tag == "Difficult":
+                                newObject.difficult = param.text
+                            elif param.tag == "Bndbox":
+                                newBoundBox = BoundBox()
+                                for coord in param.getchildren():
+                                    if coord.tag == "Xmin":
+                                        newBoundBox.xmin = coord.text
+                                    elif coord.tag == "Ymin":
+                                        newBoundBox.ymin = coord.text
+                                    elif coord.tag == "Xmax":
+                                        newBoundBox.xmax = coord.text
+                                    elif coord.tag == "Ymax":
+                                        newBoundBox.ymax = coord.text
+                                newObject.bndbox = newBoundBox
+
+                        self.imageSet.imgPaths[imagePath].objectsFromImage.append(newObject)
+
         self.fileName = file[0]
 
     def save_file(self, save_dlg=True):

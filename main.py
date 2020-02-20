@@ -1,5 +1,5 @@
 import sys
-from typing import List
+
 
 from PyQt5.QtWidgets import QApplication, QWidget, QFileDialog, QTreeView, QHBoxLayout, QVBoxLayout, QLabel
 from PyQt5.QtWidgets import QFileSystemModel, QMenuBar, QMenu, QMainWindow, QPushButton, QAction, qApp
@@ -15,59 +15,11 @@ from PyQt5.QtQuick import QQuickView
 from PyQt5.QtGui import QGuiApplication
 from PyQt5.QtQml import QQmlApplicationEngine
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import os.path
 
 from image_set_editor import ImageSetWindow
-
-
-# Размеры изображения для аннотаций
-@dataclass
-class SizeImage:
-    width: int = 0
-    height: int = 0
-    depth: int = 3
-
-
-@dataclass
-class BoundBox:
-    xmin: int = 0
-    ymin: int = 0
-    xmax: int = 0
-    ymax: int = 0
-
-
-# Объект на изображении
-@dataclass
-class ObjectInImage:
-    name: str = ""
-    pose: str = ""
-    truncated: int = 0
-    Difficult: int = 0
-    bndbox: BoundBox = BoundBox()
-
-
-# Класс "Картинка с аннотацией"
-@dataclass
-class SingleImage:
-    path: str
-    filename: str = ""
-    folder: str = ""
-    size: SizeImage = SizeImage()
-    objectFromImage: List[ObjectInImage] = field(default_factory=list, repr=False)
-    segmented: int = 0
-
-    def __post_init__(self):
-        if self.path:
-            os.path.splitext(self.path)
-
-
-# Класс "Набор картинок"
-@dataclass
-class ImageSet:
-    # Путь к файлу с описанием набора картинок
-    filePath: str = ""
-    imgPaths: List[str] = field(default_factory=list, repr=False)
+from image_set_editor import ImageSet
 
 
 # Класс типа нейронной сети
