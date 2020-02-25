@@ -237,20 +237,20 @@ class ImageSetWindow(QMainWindow):
                             elif param.tag == "Pose":
                                 newObject.pose = param.text
                             elif param.tag == "Truncated":
-                                newObject.truncated = param.text
+                                newObject.truncated = int(param.text)
                             elif param.tag == "Difficult":
-                                newObject.difficult = param.text
+                                newObject.difficult = int(param.text)
                             elif param.tag == "Bndbox":
                                 newBoundBox = BoundBox()
                                 for coord in param.getchildren():
                                     if coord.tag == "Xmin":
-                                        newBoundBox.xmin = coord.text
+                                        newBoundBox.xmin = int(coord.text)
                                     elif coord.tag == "Ymin":
-                                        newBoundBox.ymin = coord.text
+                                        newBoundBox.ymin = int(coord.text)
                                     elif coord.tag == "Xmax":
-                                        newBoundBox.xmax = coord.text
+                                        newBoundBox.xmax = int(coord.text)
                                     elif coord.tag == "Ymax":
-                                        newBoundBox.ymax = coord.text
+                                        newBoundBox.ymax = int(coord.text)
                                 newObject.bndbox = newBoundBox
 
                         self.imageSet.imgPaths[imagePath].objectsFromImage.append(newObject)
@@ -297,6 +297,32 @@ class ImageSetWindow(QMainWindow):
             for i in range(self.pathListWidget.count()):
                 pathElement = xmlET.SubElement(pathsElement, "Path")
                 pathElement.text = self.pathListWidget.item(i).text()
+
+            annotationsElement = xmlET.Element("Annotations")
+            root.append(annotationsElement)
+            for key, value in self.imageSet.imgPaths.items():
+                fileElement = xmlET.SubElement(annotationsElement, "File")
+                fileElement.set("path", key)
+                for obj in value.objectsFromImage:
+                    objElement = xmlET.SubElement(fileElement, "Object")
+                    objName = xmlET.SubElement(objElement, "Name")
+                    objName.text = obj.name
+                    objPose = xmlET.SubElement(objElement, "Pose")
+                    objPose.text = obj.pose
+                    objTruncated = xmlET.SubElement(objElement, "Truncated")
+                    objTruncated.text = str(obj.truncated)
+                    objDifficult = xmlET.SubElement(objElement, "Difficult")
+                    objDifficult.text = str(obj.difficult)
+                    objBndbox = xmlET.SubElement(objElement, "Bndbox")
+                    objXMin = xmlET.SubElement(objBndbox, "Xmin")
+                    objXMin.text = str(obj.bndbox.xmin)
+                    objYMin = xmlET.SubElement(objBndbox, "Ymin")
+                    objYMin.text = str(obj.bndbox.ymin)
+                    objXMax = xmlET.SubElement(objBndbox, "Xmax")
+                    objXMax.text = str(obj.bndbox.xmax)
+                    objYMax = xmlET.SubElement(objBndbox, "Ymax")
+                    objYMax.text = str(obj.bndbox.ymax)
+
 
             tree = xmlET.ElementTree(root)
             with open(self.fileName, "w"):
@@ -466,10 +492,19 @@ class ImageSetWindow(QMainWindow):
 
     def image_list_widget_item_selected(self):
         if self.imagesListWidget.currentItem():
-            mainImg = cv2.imread(self.imagesListWidget.currentItem().text(), cv2.IMREAD_COLOR)[:, :, ::-1]
-            resizeKoef = min(self.imLabel.width() / mainImg.shape[1], self.imLabel.height() / mainImg.shape[0])
+            loadImg = cv2.imread(self.imagesListWidget.currentItem().text(), cv2.IMREAD_COLOR)[:, :, ::-1]
+            mainImg = np.copy(loadImg)
+            image = self.imageSet.imgPaths.get(self.imagesListWidget.currentItem().text())
+            if image:
+                for obj in image.objectsFromImage:
+                    cv2.rectangle(mainImg,
+                                  (int(obj.bndbox.xmin), int(obj.bndbox.ymin)),
+                                  (int(obj.bndbox.xmax), int(obj.bndbox.ymax)),
+                                  (255, 0, 0), 5)
+            resizeCoefficient = min(self.imLabel.width() / mainImg.shape[1], self.imLabel.height() / mainImg.shape[0])
             resizedImage = cv2.resize(mainImg.copy(),
-                                      (int(resizeKoef * mainImg.shape[1]), int(resizeKoef * mainImg.shape[0])),
+                                      (int(resizeCoefficient * mainImg.shape[1]),
+                                       int(resizeCoefficient * mainImg.shape[0])),
                                       interpolation=cv2.INTER_AREA)
             qImg = numpy_to_image(resizedImage)
             pixmap = QtGui.QPixmap.fromImage(qImg)
