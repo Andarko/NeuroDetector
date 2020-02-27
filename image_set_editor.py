@@ -1,12 +1,12 @@
 import xml.etree.ElementTree as xmlET
 
 from typing import List
-from PyQt5.QtGui import QImage
+from PyQt5.QtGui import QImage, QCursor
 import PyQt5.QtGui as QtGui
 from lxml import etree
 from PyQt5.QtWidgets import QMainWindow, QLabel, QListWidget, QMenu, QAction, QWidget, QHBoxLayout, QVBoxLayout, \
     QSizePolicy, QFileDialog, QInputDialog, QMessageBox, QLineEdit
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QEvent, QPoint
 import os
 import glob
 import numpy as np
@@ -62,6 +62,7 @@ class ImageSet:
     # Путь к файлу с описанием набора картинок
     filePath: str = ""
     imgPaths: List[SingleImage] = field(default_factory=dict, repr=False)
+    objects: List[str] = field(default_factory=dict, repr=False)
 
 
 # Окно для работы с наборами изображений
@@ -80,9 +81,14 @@ class ImageSetWindow(QMainWindow):
         self.imagesListWidget = QListWidget()
         # Список объектов
         self.objectListWidget = QListWidget()
+        self.menuObjectListWidget = QMenu()
+        self.actionObjectEdit = QAction()
+        self.actionObjectRemove = QAction()
         # Путь к текущему открытому файлу
         self.fileName = ""
         self.imageSet = ImageSet()
+        self.colors = ((0, 0, 255), (0, 255, 0), (255, 255, 0), (0, 255, 255), (255, 0, 255), (125, 125, 125))
+
         self.init_ui()
 
     def init_ui(self):
@@ -94,14 +100,21 @@ class ImageSetWindow(QMainWindow):
         fileMenuANew.setShortcut("Ctrl+N")
         fileMenuANew.setStatusTip("Новый набор картинок")
         fileMenuANew.triggered.connect(self.new_file)
-
         fileMenu.addAction(fileMenuANew)
+
         fileMenu.addSeparator()
         fileMenuAOpen = QAction("&Открыть...", self)
         fileMenuAOpen.setShortcut("Ctrl+O")
         fileMenuAOpen.setStatusTip("Открыть существующий набор картинок")
         fileMenuAOpen.triggered.connect(self.open_file)
         fileMenu.addAction(fileMenuAOpen)
+
+        fileMenu.addSeparator()
+        fileMenuAImport = QAction("&Импорт...", self)
+        fileMenuAImport.setShortcut("Ctrl+I")
+        fileMenuAImport.setStatusTip("Импортировать набор картинок из набора Tensor Flow")
+        fileMenuAImport.triggered.connect(self.import_file)
+        fileMenu.addAction(fileMenuAImport)
 
         fileMenu.addSeparator()
         fileMenuASave = fileMenu.addAction("&Сохранить")
@@ -143,7 +156,7 @@ class ImageSetWindow(QMainWindow):
         self.pathListWidget.customContextMenuRequested.connect(self.show_context_menu_path)
         self.pathListWidget.itemSelectionChanged.connect(self.path_list_widget_item_selected)
 
-        """Контекстное меню"""
+        """Контекстное меню источников"""
         actionPathAddFile = self.menuPathListWidget.addAction('Добавить файл/файлы...')
         actionPathAddFile.setShortcut("insert")
         actionPathAddFile.triggered.connect(self.action_path_add_file_click)
@@ -189,20 +202,50 @@ class ImageSetWindow(QMainWindow):
         labelObjectListWidget = QLabel("Объекты")
         leftLayout.addWidget(labelObjectListWidget)
         leftLayout.addWidget(self.objectListWidget)
+        self.objectListWidget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.objectListWidget.customContextMenuRequested.connect(self.show_context_menu_object)
         self.objectListWidget.addItem("Автомобиль")
         self.objectListWidget.addItem("Человек")
         self.objectListWidget.addItem("Птица")
 
+        """Контекстное меню объектов"""
+        actionObjectAdd = self.menuObjectListWidget.addAction('Добавить...')
+        actionObjectAdd.setShortcut("insert")
+        actionObjectAdd.triggered.connect(self.action_object_add_click)
+
+        self.actionObjectEdit.setText("Изменить...")
+        self.menuObjectListWidget.addAction(self.actionObjectEdit)
+        self.actionObjectEdit.triggered.connect(self.action_object_edit_click)
+
+        self.actionObjectRemove.setText("Удалить")
+        self.actionObjectRemove.setShortcut("delete")
+        self.menuObjectListWidget.addAction(self.actionObjectRemove)
+        self.actionObjectRemove.triggered.connect(lambda: self.objectListWidget.takeItem(self.objectListWidget.currentRow()))
+
+        # Изображение
         self.imLabel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.imLabel.setStyleSheet("border: 1px solid red")
         centralLayout.addWidget(self.imLabel)
+        self.imLabel.installEventFilter(self)
 
         self.resize(800, 600)
         self.move(300, 300)
         self.setMinimumSize(800, 600)
 
+        # Обработчики событий формы и ее компонентов
+
+    def eventFilter(self, obj, event):
+         if obj is self.imLabel:
+             if event.type() == QEvent.Resize:
+                 self.image_list_widget_item_selected()
+         return QMainWindow.eventFilter(self, obj, event)
+
     def new_file(self):
         self.imageSet = ImageSet()
+        self.pathListWidget.clear()
+        self.objectListWidget.clear()
+        self.imagesListWidget.clear()
+        self.imLabel.clear()
 
     def open_file(self):
         fileDialog = QFileDialog()
@@ -215,12 +258,13 @@ class ImageSetWindow(QMainWindow):
         if not file[0]:
             return
 
+        self.new_file()
         # Загружаем данные тз нашего файла в xml формате
         with open(file[0]) as fileObj:
             xml = fileObj.read()
         root = etree.fromstring(xml)
-        self.pathListWidget.clear()
-        self.imageSet = ImageSet(filePath=file[0])
+
+        self.imageSet.filePath = file[0]
         for elementsXML in root.getchildren():
             if elementsXML.tag == "Paths":
                 for element in elementsXML.getchildren():
@@ -252,11 +296,100 @@ class ImageSetWindow(QMainWindow):
                                     elif coord.tag == "Ymax":
                                         newBoundBox.ymax = int(coord.text)
                                 newObject.bndbox = newBoundBox
-
                         self.imageSet.imgPaths[imagePath].objectsFromImage.append(newObject)
-
+            elif elementsXML.tag == "Types":
+                for element in elementsXML.getchildren():
+                    self.imageSet.objects[element.text] = len(self.imageSet.objects)
+                    self.objectListWidget.addItem(element.text)
         self.fileName = file[0]
 
+    # Импорт набора картинок из набора Tensor Flow
+    def import_file(self):
+        self.new_file()
+        imgDirectory = self.get_folder_images()
+        if not imgDirectory:
+            return
+
+        """fileDialog = QFileDialog()
+        file = QFileDialog.getOpenFileName(fileDialog,
+                                           "Укажите файл с метками (список объектов)",
+                                           "",
+                                           "All files (*.*);;Файлы с метками (*.pbtxt)",
+                                           "Файлы с метками (*.pbtxt)",
+                                           options=fileDialog.options() | QFileDialog.DontUseNativeDialog)
+        if not file[0]:
+            return
+
+        with open(file[0]) as fileObj:
+            xml = fileObj.read()
+            """
+
+        self.pathListWidget.addItem(imgDirectory)
+        annDirectory = self.get_folder_images("", "", caption="Выберите папку с аннотациями")
+        if annDirectory:
+            if os.path.exists(os.path.join(annDirectory, "xmls")):
+                annDirectory = os.path.join(annDirectory, "xmls")
+            # Получаем файлы в папке анотаций по маске "xml", "xmls"
+            annFiles = glob.glob(os.path.join(annDirectory, "*.xml*"))
+            annFiles.sort()
+            for annFile in annFiles:
+                with open(annFile) as fileObj:
+                    xml = fileObj.read()
+                root = etree.fromstring(xml)
+                imagePath = ""
+                for elementsXML in root.getchildren():
+                    if elementsXML.tag == "filename":
+                        imagePath = os.path.join(imgDirectory, elementsXML.text)
+                        self.imageSet.imgPaths[imagePath] = SingleImage(imagePath)
+                        break
+                if imagePath:
+                    for elementsXML in root.getchildren():
+                        if elementsXML.tag == "folder":
+                            self.imageSet.imgPaths[imagePath].folder = elementsXML.text
+                        elif elementsXML.tag == "filename":
+                            self.imageSet.imgPaths[imagePath].filename = elementsXML.text
+                        elif elementsXML.tag == "size":
+                            for sizeParamXML in elementsXML.getchildren():
+                                if sizeParamXML.tag == "width":
+                                    self.imageSet.imgPaths[imagePath].size.width = int(sizeParamXML.text)
+                                elif sizeParamXML.tag == "height":
+                                    self.imageSet.imgPaths[imagePath].size.height = int(sizeParamXML.text)
+                                elif sizeParamXML.tag == "depth":
+                                    self.imageSet.imgPaths[imagePath].size.depth = int(sizeParamXML.text)
+                        elif elementsXML.tag == "segmented":
+                            self.imageSet.imgPaths[imagePath].segmented = int(elementsXML.text)
+                        elif elementsXML.tag == "object":
+                            newObject = ObjectInImage()
+                            for param in elementsXML.getchildren():
+                                if param.tag == "name":
+                                    newObject.name = param.text
+                                elif param.tag == "pose":
+                                    newObject.pose = param.text
+                                elif param.tag == "truncated":
+                                    newObject.truncated = int(param.text)
+                                elif param.tag == "Difficult":
+                                    newObject.difficult = int(param.text)
+                                elif param.tag == "bndbox":
+                                    newBoundBox = BoundBox()
+                                    for coord in param.getchildren():
+                                        if coord.tag == "xmin":
+                                            newBoundBox.xmin = int(coord.text)
+                                        elif coord.tag == "ymin":
+                                            newBoundBox.ymin = int(coord.text)
+                                        elif coord.tag == "xmax":
+                                            newBoundBox.xmax = int(coord.text)
+                                        elif coord.tag == "ymax":
+                                            newBoundBox.ymax = int(coord.text)
+                                    newObject.bndbox = newBoundBox
+                            if self.imageSet.objects.get(newObject.name, -1) == -1: # newObject.name not in self.imageSet.objects:
+                                self.imageSet.objects[newObject.name] = len(self.imageSet.objects)
+                                self.objectListWidget.addItem(newObject.name)
+                            self.imageSet.imgPaths[imagePath].objectsFromImage.append(newObject)
+
+        if not annDirectory:
+            return
+
+    # Сохранение файла с набором изображений
     def save_file(self, save_dlg=True):
         if self.pathListWidget.count() == 0:
             return
@@ -291,9 +424,9 @@ class ImageSetWindow(QMainWindow):
         # Записываем данные в наш файл в xml формате
         if self.fileName:
             root = xmlET.Element("ImageSet")
+
             pathsElement = xmlET.Element("Paths")
             root.append(pathsElement)
-
             for i in range(self.pathListWidget.count()):
                 pathElement = xmlET.SubElement(pathsElement, "Path")
                 pathElement.text = self.pathListWidget.item(i).text()
@@ -323,6 +456,11 @@ class ImageSetWindow(QMainWindow):
                     objYMax = xmlET.SubElement(objBndbox, "Ymax")
                     objYMax.text = str(obj.bndbox.ymax)
 
+            pathsElement = xmlET.Element("Types")
+            root.append(pathsElement)
+            for obj in self.imageSet.objects.keys():
+                pathElement = xmlET.SubElement(pathsElement, "Type")
+                pathElement.text = obj
 
             tree = xmlET.ElementTree(root)
             with open(self.fileName, "w"):
@@ -338,7 +476,7 @@ class ImageSetWindow(QMainWindow):
         self.fileName = currentFileName
         return
 
-    # Отображение
+    # Отображение контекстного меню путей
     def show_context_menu_path(self, point):
         if self.pathListWidget.currentItem():
             self.actionPathEdit.setEnabled(True)
@@ -360,7 +498,18 @@ class ImageSetWindow(QMainWindow):
             self.actionPathSubFolder.setChecked(False)
             self.actionPathEdit.setEnabled(False)
             self.actionPathRemove.setEnabled(False)
-        self.menuPathListWidget.exec(self.mapToGlobal(point))
+        # self.menuPathListWidget.exec(self.mapToGlobal(point))
+        self.menuPathListWidget.exec(QCursor.pos())
+
+        # Отображение контекстного меню объектов
+    def show_context_menu_object(self, point):
+        if self.objectListWidget.currentItem():
+            self.actionObjectEdit.setEnabled(True)
+            self.actionObjectRemove.setEnabled(True)
+        else:
+            self.actionObjectEdit.setEnabled(False)
+            self.actionObjectRemove.setEnabled(False)
+        self.menuObjectListWidget.exec(QCursor.pos())
 
     def get_files_images(self, init_dir="", multi_select=True):
         openDialog = QFileDialog()
@@ -380,19 +529,20 @@ class ImageSetWindow(QMainWindow):
             if file:
                 self.pathListWidget.addItem(file)
 
-    def get_folder_images(self, init_dir=""):
+    def get_folder_images(self, init_dir="", check_file_mask="*.jpg", caption="Выберите папку с изображениями",
+                          answer="В указанной папке не обнаружено файлов изображений. Все равно добавить ее?"):
         openDialog = QFileDialog()
         directory = openDialog.getExistingDirectory(self,
-                                                    "Выберите папку с файлами",
-                                                    init_dir,
+                                                    caption=caption,
+                                                    directory=init_dir,
                                                     options=openDialog.options() | QFileDialog.DontUseNativeDialog)
-        if directory and os.path.isdir(directory):
-            if not glob.glob(os.path.join(directory, "*.jpg")) \
-                    and not glob.glob(os.path.join(directory, "**", "*.jpg"), recursive=True):
+        if directory and os.path.isdir(directory) and check_file_mask:
+            if not glob.glob(os.path.join(directory, check_file_mask)) \
+                    and not glob.glob(os.path.join(directory, "**", check_file_mask), recursive=True):
                 mBox = QMessageBox()
                 dlgResult = mBox.question(self,
                                           "Диалог подтверждения",
-                                          "В указанной папке не обнаружено файлов изображений. Все равно добавить ее?",
+                                          answer,
                                           QMessageBox.Yes | QMessageBox.No,
                                           QMessageBox.No)
                 if dlgResult == QMessageBox.No:
@@ -411,8 +561,8 @@ class ImageSetWindow(QMainWindow):
 
         while True:
             mask, ok = inputDialog.getText(self,
-                                           'Введите маску для файлов директории',
-                                           'Enter your name:',
+                                           "Введите маску для файлов директории",
+                                           "Enter your name:",
                                            QLineEdit.Normal,
                                            init_path)
 
@@ -497,11 +647,17 @@ class ImageSetWindow(QMainWindow):
             image = self.imageSet.imgPaths.get(self.imagesListWidget.currentItem().text())
             if image:
                 for obj in image.objectsFromImage:
+                    lineWidth = 4
                     cv2.rectangle(mainImg,
                                   (int(obj.bndbox.xmin), int(obj.bndbox.ymin)),
                                   (int(obj.bndbox.xmax), int(obj.bndbox.ymax)),
-                                  (255, 0, 0), 5)
-            resizeCoefficient = min(self.imLabel.width() / mainImg.shape[1], self.imLabel.height() / mainImg.shape[0])
+                                  (255, 0, 0), lineWidth)
+                    textX = int(obj.bndbox.xmin)
+                    textY = int(obj.bndbox.ymin) - lineWidth
+                    cv2.putText(mainImg, obj.name, (textX, textY), cv2.FONT_HERSHEY_SIMPLEX, 1,
+                                self.colors[self.imageSet.objects[obj.name]], 1)
+            # resizeCoefficient = min(self.imLabel.width() / mainImg.shape[1], self.imLabel.height() / mainImg.shape[0])
+            resizeCoefficient = min(self.width() / 2 / mainImg.shape[1], self.height() / mainImg.shape[0])
             resizedImage = cv2.resize(mainImg.copy(),
                                       (int(resizeCoefficient * mainImg.shape[1]),
                                        int(resizeCoefficient * mainImg.shape[0])),
@@ -509,6 +665,29 @@ class ImageSetWindow(QMainWindow):
             qImg = numpy_to_image(resizedImage)
             pixmap = QtGui.QPixmap.fromImage(qImg)
             self.imLabel.setPixmap(pixmap)
+
+    def get_text_from_dialog(self, default_name=""):
+        inputDialog = QInputDialog
+        text, ok = inputDialog.getText(self,
+                                       "Введите название объекта распознавания",
+                                       "Name:",
+                                       QLineEdit.Normal,
+                                       default_name)
+
+        if ok:
+            return text
+        else:
+            return ""
+
+    def action_object_add_click(self):
+        newName = self.get_text_from_dialog()
+        if newName:
+            self.objectListWidget.addItem(newName)
+
+    def action_object_edit_click(self):
+        newName = self.get_text_from_dialog(self.objectListWidget.currentItem().text())
+        if newName:
+            self.objectListWidget.currentItem().setText(newName)
 
 
 def get_end_of_word(count, ends):
